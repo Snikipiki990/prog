@@ -4,11 +4,22 @@
 #include <time.h>
 #include <unistd.h>
 
+
 #ifdef _WIN32
     #define CLEAR_SCREEN "cls"
+    #include <windows.h>
 #else
     #define CLEAR_SCREEN "clear"
 #endif
+
+void setupConsole() {
+    #ifdef _WIN32
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleCP(CP_UTF8);
+    #else
+        setlocale(LC_ALL, "ru_RU.UTF-8");
+    #endif
+}
 
 // Структуры данных
 typedef struct Customer {
@@ -47,6 +58,25 @@ Cashier* cashiers = NULL;
 int current_time = 0;
 int total_customers_served = 0;
 int total_check_sum_all = 0;
+
+// Прототипы функций
+void load_settings();
+void init_queue(Queue* q);
+void enqueue(Queue* q, Customer customer);
+Customer dequeue(Queue* q);
+void init_cashiers();
+Customer generate_customer();
+void generate_next_customers(Customer* next_customers, int* next_count);
+int get_active_cashiers_count();
+int get_total_customers_in_queues();
+int find_cashier_with_min_queue();
+void open_new_cashier();
+void close_cashier_if_needed();
+void distribute_customers(Customer* customers, int count);
+void process_cashiers();
+void print_interface(Customer* next_customers, int next_count); // Добавлен прототип
+void run_simulation();
+void cleanup();
 
 // Загрузка параметров из файла
 void load_settings() {
@@ -340,6 +370,11 @@ void cleanup() {
 }
 
 int main() {
+    #ifdef _WIN32
+        SetConsoleOutputCP(1251);
+        SetConsoleCP(1251);
+    #endif
+    
     atexit(cleanup);
     run_simulation();
     return 0;
