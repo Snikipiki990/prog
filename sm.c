@@ -4,22 +4,11 @@
 #include <time.h>
 #include <unistd.h>
 
-
 #ifdef _WIN32
     #define CLEAR_SCREEN "cls"
-    #include <windows.h>
 #else
     #define CLEAR_SCREEN "clear"
 #endif
-
-void setupConsole() {
-    #ifdef _WIN32
-        SetConsoleOutputCP(CP_UTF8);
-        SetConsoleCP(CP_UTF8);
-    #else
-        setlocale(LC_ALL, "ru_RU.UTF-8");
-    #endif
-}
 
 // Структуры данных
 typedef struct Customer {
@@ -74,7 +63,7 @@ void open_new_cashier();
 void close_cashier_if_needed();
 void distribute_customers(Customer* customers, int count);
 void process_cashiers();
-void print_interface(Customer* next_customers, int next_count); // Добавлен прототип
+void print_interface(Customer* next_customers, int next_count);
 void run_simulation();
 void cleanup();
 
@@ -82,7 +71,7 @@ void cleanup();
 void load_settings() {
     FILE* file = fopen("settings.txt", "r");
     if (file == NULL) {
-        printf("Ошибка: файл settings.txt не найден.\n");
+        printf("Error: settings.txt not found.\n");
         exit(1);
     }
 
@@ -104,7 +93,7 @@ void load_settings() {
     if (MAX_CUSTOMER_TIME == 0 || MAX_CASHIER_QUEUE == 0 || 
         MAX_CASHIERS == 0 || MAX_NEXT_CUSTOMERS == 0 || 
         MAX_CUSTOMER_CHECK == 0) {
-        printf("Ошибка: не все параметры заданы в settings.txt\n");
+        printf("Error: not all parameters set in settings.txt\n");
         exit(1);
     }
 }
@@ -157,7 +146,7 @@ void init_cashiers() {
         cashiers[i].total_check_sum = 0;
         init_queue(&cashiers[i].queue);
     }
-    cashiers[0].is_active = 1; // Первая касса всегда активна
+    cashiers[0].is_active = 1; // First cashier always active
 }
 
 // Генерация случайного посетителя
@@ -250,7 +239,7 @@ void distribute_customers(Customer* customers, int count) {
             
             // Если все кассы заполнены - Game Over
             if (cashier_index == -1) {
-                printf("Game Over: невозможно разместить всех посетителей!\n");
+                printf("Game Over: cannot place all customers!\n");
                 print_interface(NULL, 0);
                 exit(0);
             }
@@ -278,27 +267,27 @@ void process_cashiers() {
     }
 }
 
-// Вывод интерфейса
+// Вывод интерфейса (на английском)
 void print_interface(Customer* next_customers, int next_count) {
     system(CLEAR_SCREEN);
-    printf("Супермаркет \"Реми\". Система моделирования очередей.\n\n");
+    printf("Supermarket \"Remy\". Queue simulation system.\n\n");
     
-    // Номера касс
+    // Cashier numbers
     printf("  ");
     for (int i = 0; i < MAX_CASHIERS; i++) printf("%3d ", i + 1);
     printf("\n");
     
-    // Обслужено посетителей
+    // Customers served
     printf("  ");
     for (int i = 0; i < MAX_CASHIERS; i++) printf("%3d ", cashiers[i].served_customers);
     printf("\n");
     
-    // Статус кассы
+    // Cashier status
     printf("  ");
     for (int i = 0; i < MAX_CASHIERS; i++) printf("  %c ", cashiers[i].is_active ? '+' : '-');
     printf("\n");
     
-    // Очереди на кассах
+    // Queues on cashiers
     for (int row = 0; row < MAX_CASHIER_QUEUE; row++) {
         printf("  ");
         for (int i = 0; i < MAX_CASHIERS; i++) {
@@ -322,19 +311,19 @@ void print_interface(Customer* next_customers, int next_count) {
         printf("\n");
     }
     
-    // Статистика
-    printf("\nВремя: %d\n", current_time);
+    // Statistics
+    printf("\nTime: %d\n", current_time);
     
-    printf("Следующие посетители: ");
-    if (next_count == 0) printf("нет");
+    printf("Next customers: ");
+    if (next_count == 0) printf("none");
     else for (int i = 0; i < next_count; i++) printf("%c%d ", next_customers[i].name, next_customers[i].service_time);
     printf("\n");
     
-    printf("Человек в очередях: %d\n", get_total_customers_in_queues());
-    printf("Касс работает: %d из %d\n", get_active_cashiers_count(), MAX_CASHIERS);
-    printf("Всего обслужено: %d\n", total_customers_served);
-    printf("Сумма покупок: %d\n", total_check_sum_all);
-    printf("Допустимая очередь на кассу: %d\n", MAX_CASHIER_QUEUE);
+    printf("People in queues: %d\n", get_total_customers_in_queues());
+    printf("Active cashiers: %d of %d\n", get_active_cashiers_count(), MAX_CASHIERS);
+    printf("Total served: %d\n", total_customers_served);
+    printf("Total sum: %d\n", total_check_sum_all);
+    printf("Max queue per cashier: %d\n", MAX_CASHIER_QUEUE);
 }
 
 // Основная функция симуляции
@@ -370,11 +359,6 @@ void cleanup() {
 }
 
 int main() {
-    #ifdef _WIN32
-        SetConsoleOutputCP(1251);
-        SetConsoleCP(1251);
-    #endif
-    
     atexit(cleanup);
     run_simulation();
     return 0;
