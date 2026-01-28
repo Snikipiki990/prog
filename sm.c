@@ -2,316 +2,308 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
-
-
 #ifdef _WIN32
-    #define CLEAR_SCREEN "cls"
-    #include <windows.h>
-#else
-    #define CLEAR_SCREEN "clear"
+#include <windows.h>
 #endif
 
-void setupConsole() {
-    #ifdef _WIN32
-        SetConsoleOutputCP(CP_UTF8);
-        SetConsoleCP(CP_UTF8);
-    #else
-        setlocale(LC_ALL, "ru_RU.UTF-8");
-    #endif
-}
-
 // Структуры данных
-typedef struct Customer {
+struct Customer {
     char name;
-    int service_time;
-    int check_sum;
-} Customer;
+    int time;
+    int money;
+};
 
-typedef struct QueueNode {
-    Customer customer;
-    struct QueueNode* next;
-} QueueNode;
+struct Node {
+    struct Customer person;
+    struct Node* next;
+};
 
-typedef struct Queue {
-    QueueNode* front;
-    QueueNode* rear;
-    int length;
-} Queue;
+struct Queue {
+    struct Node* first;
+    struct Node* last;
+    int size;
+};
 
-typedef struct Cashier {
-    int is_active;
-    int served_customers;
-    int total_check_sum;
-    Queue queue;
-} Cashier;
+struct Cashier {
+    int work;
+    int done;
+    int total_money;
+    struct Queue line;
+};
 
-// Глобальные параметры из файла
-int MAX_CUSTOMER_TIME = 0;
-int MAX_CASHIER_QUEUE = 0;
-int MAX_CASHIERS = 0;
-int MAX_NEXT_CUSTOMERS = 0;
-int MAX_CUSTOMER_CHECK = 0;
+// Глобальные переменные
+int MAX_TIME = 0;
+int MAX_QUEUE = 0;
+int MAX_CASH = 0;
+int MAX_NEW = 0;
+int MAX_MONEY = 0;
 
-// Глобальные переменные симуляции
-Cashier* cashiers = NULL;
-int current_time = 0;
-int total_customers_served = 0;
-int total_check_sum_all = 0;
+struct Cashier* all_cashiers = NULL;
+int seconds = 0;
+int all_done = 0;
+int all_money = 0;
 
-// Прототипы функций
-void load_settings();
-void init_queue(Queue* q);
-void enqueue(Queue* q, Customer customer);
-Customer dequeue(Queue* q);
-void init_cashiers();
-Customer generate_customer();
-void generate_next_customers(Customer* next_customers, int* next_count);
-int get_active_cashiers_count();
-int get_total_customers_in_queues();
-int find_cashier_with_min_queue();
-void open_new_cashier();
-void close_cashier_if_needed();
-void distribute_customers(Customer* customers, int count);
-void process_cashiers();
-void print_interface(Customer* next_customers, int next_count); // Добавлен прототип
-void run_simulation();
-void cleanup();
-
-// Загрузка параметров из файла
-void load_settings() {
-    FILE* file = fopen("settings.txt", "r");
-    if (file == NULL) {
-        printf("Ошибка: файл settings.txt не найден.\n");
+// Функции
+void read_settings() {
+    FILE* f = fopen("settings.txt", "r");
+    if (!f) {
+        printf("Error: settings.txt not found!\n");
         exit(1);
     }
-
+    
     char line[100];
-    while (fgets(line, sizeof(line), file)) {
-        char key[50];
-        int value;
-        if (sscanf(line, "%[^=]=%d", key, &value) == 2) {
-            if (strcmp(key, "MAX_CUSTOMER_TIME") == 0) MAX_CUSTOMER_TIME = value;
-            else if (strcmp(key, "MAX_CASHIER_QUEUE") == 0) MAX_CASHIER_QUEUE = value;
-            else if (strcmp(key, "MAX_CASHIERS") == 0) MAX_CASHIERS = value;
-            else if (strcmp(key, "MAX_NEXT_CUSTOMERS") == 0) MAX_NEXT_CUSTOMERS = value;
-            else if (strcmp(key, "MAX_CUSTOMER_CHECK") == 0) MAX_CUSTOMER_CHECK = value;
+    while (fgets(line, 100, f)) {
+        char* eq = strchr(line, '=');
+        if (eq) {
+            *eq = '\0';
+            char* name = line;
+            int value = atoi(eq + 1);
+            
+            if (strcmp(name, "MAX_CUSTOMER_TIME") == 0) MAX_TIME = value;
+            else if (strcmp(name, "MAX_CASHIER_QUEUE") == 0) MAX_QUEUE = value;
+            else if (strcmp(name, "MAX_CASHIERS") == 0) MAX_CASH = value;
+            else if (strcmp(name, "MAX_NEXT_CUSTOMERS") == 0) MAX_NEW = value;
+            else if (strcmp(name, "MAX_CUSTOMER_CHECK") == 0) MAX_MONEY = value;
         }
     }
-    fclose(file);
-
-    // Проверка всех параметров
-    if (MAX_CUSTOMER_TIME == 0 || MAX_CASHIER_QUEUE == 0 || 
-        MAX_CASHIERS == 0 || MAX_NEXT_CUSTOMERS == 0 || 
-        MAX_CUSTOMER_CHECK == 0) {
-        printf("Ошибка: не все параметры заданы в settings.txt\n");
+    fclose(f);
+    
+    if (MAX_TIME == 0 || MAX_QUEUE == 0 || MAX_CASH == 0 || MAX_NEW == 0 || MAX_MONEY == 0) {
+        printf("Error in settings file!\n");
         exit(1);
     }
 }
 
-// Инициализация очереди
-void init_queue(Queue* q) {
-    q->front = q->rear = NULL;
-    q->length = 0;
+void make_empty_queue(struct Queue* q) {
+    q->first = NULL;
+    q->last = NULL;
+    q->size = 0;
 }
 
-// Добавление в очередь
-void enqueue(Queue* q, Customer customer) {
-    if (q->length >= MAX_CASHIER_QUEUE) return;
+void add_to_queue(struct Queue* q, struct Customer c) {
+    if (q->size >= MAX_QUEUE) return;
     
-    QueueNode* newNode = (QueueNode*)malloc(sizeof(QueueNode));
-    newNode->customer = customer;
-    newNode->next = NULL;
+    struct Node* new_node = (struct Node*)malloc(sizeof(struct Node));
+    new_node->person = c;
+    new_node->next = NULL;
     
-    if (q->rear == NULL) {
-        q->front = q->rear = newNode;
+    if (q->last == NULL) {
+        q->first = new_node;
+        q->last = new_node;
     } else {
-        q->rear->next = newNode;
-        q->rear = newNode;
+        q->last->next = new_node;
+        q->last = new_node;
     }
-    q->length++;
+    q->size++;
 }
 
-// Удаление из очереди
-Customer dequeue(Queue* q) {
-    Customer empty_customer = {' ', 0, 0};
-    if (q->front == NULL) return empty_customer;
+struct Customer take_from_queue(struct Queue* q) {
+    struct Customer empty = {' ', 0, 0};
+    if (q->first == NULL) return empty;
     
-    QueueNode* temp = q->front;
-    Customer customer = temp->customer;
-    q->front = q->front->next;
+    struct Node* temp = q->first;
+    struct Customer c = temp->person;
+    q->first = q->first->next;
     
-    if (q->front == NULL) q->rear = NULL;
+    if (q->first == NULL) q->last = NULL;
     
     free(temp);
-    q->length--;
-    return customer;
+    q->size--;
+    return c;
 }
 
-// Инициализация всех касс
-void init_cashiers() {
-    cashiers = (Cashier*)malloc(MAX_CASHIERS * sizeof(Cashier));
-    for (int i = 0; i < MAX_CASHIERS; i++) {
-        cashiers[i].is_active = 0;
-        cashiers[i].served_customers = 0;
-        cashiers[i].total_check_sum = 0;
-        init_queue(&cashiers[i].queue);
+void prepare_cashiers() {
+    all_cashiers = (struct Cashier*)malloc(MAX_CASH * sizeof(struct Cashier));
+    for (int i = 0; i < MAX_CASH; i++) {
+        all_cashiers[i].work = 0;
+        all_cashiers[i].done = 0;
+        all_cashiers[i].total_money = 0;
+        make_empty_queue(&all_cashiers[i].line);
     }
-    cashiers[0].is_active = 1; // Первая касса всегда активна
+    all_cashiers[0].work = 1; // первая касса работает
 }
 
-// Генерация случайного посетителя
-Customer generate_customer() {
-    Customer customer;
-    customer.name = 'a' + rand() % 26;
-    customer.service_time = 1 + rand() % MAX_CUSTOMER_TIME;
-    customer.check_sum = 1 + rand() % MAX_CUSTOMER_CHECK;
-    return customer;
+struct Customer make_customer() {
+    struct Customer c;
+    c.name = 'a' + rand() % 26;
+    c.time = 1 + rand() % MAX_TIME;
+    c.money = 1 + rand() % MAX_MONEY;
+    return c;
 }
 
-// Генерация посетителей для следующего шага
-void generate_next_customers(Customer* next_customers, int* next_count) {
-    *next_count = rand() % (MAX_NEXT_CUSTOMERS + 1);
-    for (int i = 0; i < *next_count; i++) {
-        next_customers[i] = generate_customer();
-    }
-}
-
-// Количество активных касс
-int get_active_cashiers_count() {
+int working_cashiers() {
     int count = 0;
-    for (int i = 0; i < MAX_CASHIERS; i++) {
-        if (cashiers[i].is_active) count++;
+    for (int i = 0; i < MAX_CASH; i++) {
+        if (all_cashiers[i].work) count++;
     }
     return count;
 }
 
-// Общее количество людей в очередях
-int get_total_customers_in_queues() {
+int people_in_lines() {
     int total = 0;
-    for (int i = 0; i < MAX_CASHIERS; i++) {
-        if (cashiers[i].is_active) total += cashiers[i].queue.length;
+    for (int i = 0; i < MAX_CASH; i++) {
+        if (all_cashiers[i].work) total += all_cashiers[i].line.size;
     }
     return total;
 }
 
-// Касса с минимальной очередью
-int find_cashier_with_min_queue() {
-    int min_index = -1;
-    int min_length = MAX_CASHIER_QUEUE + 1;
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ: Проверяем, нужно ли включить новую кассу
+int need_new_cashier() {
+    // Если все кассы уже работают, не нужно включать новую
+    if (working_cashiers() == MAX_CASH) return 0;
     
-    for (int i = 0; i < MAX_CASHIERS; i++) {
-        if (cashiers[i].is_active && cashiers[i].queue.length < min_length) {
-            min_length = cashiers[i].queue.length;
-            min_index = i;
+    // Проверяем все работающие кассы
+    for (int i = 0; i < MAX_CASH; i++) {
+        if (all_cashiers[i].work) {
+            // Если хоть одна работающая касса НЕ заполнена полностью, 
+            // значит новая касса пока не нужна
+            if (all_cashiers[i].line.size < MAX_QUEUE) {
+                return 0; // Не нужно включать
+            }
         }
     }
-    return min_index;
+    
+    // Все работающие кассы заполнены до предела
+    return 1; // Нужно включить новую кассу
 }
 
-// Открытие новой кассы
-void open_new_cashier() {
-    for (int i = 0; i < MAX_CASHIERS; i++) {
-        if (!cashiers[i].is_active) {
-            cashiers[i].is_active = 1;
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ: Включаем новую кассу (самую левую неактивную)
+void turn_on_new_cashier() {
+    for (int i = 0; i < MAX_CASH; i++) {
+        if (!all_cashiers[i].work) {
+            all_cashiers[i].work = 1;
+            printf("\nВключена касса %d!\n", i+1);
             return;
         }
     }
 }
 
-// Закрытие кассы с максимальным количеством обслуженных
-void close_cashier_if_needed() {
-    if (get_total_customers_in_queues() > 0) return;
-    
-    int max_served = -1;
-    int max_index = -1;
-    
-    for (int i = 1; i < MAX_CASHIERS; i++) {
-        if (cashiers[i].is_active && cashiers[i].served_customers > max_served) {
-            max_served = cashiers[i].served_customers;
-            max_index = i;
+void check_customers() {
+    for (int i = 0; i < MAX_CASH; i++) {
+        if (all_cashiers[i].work && all_cashiers[i].line.first != NULL) {
+            all_cashiers[i].line.first->person.time--;
+            
+            if (all_cashiers[i].line.first->person.time == 0) {
+                struct Customer done = take_from_queue(&all_cashiers[i].line);
+                all_cashiers[i].done++;
+                all_cashiers[i].total_money += done.money;
+                all_done++;
+                all_money += done.money;
+            }
         }
-    }
-    
-    if (max_index != -1 && get_active_cashiers_count() > 1) {
-        cashiers[max_index].is_active = 0;
     }
 }
 
-// Распределение посетителей по кассам
-void distribute_customers(Customer* customers, int count) {
+// Расставляем покупателей по кассам
+int place_customers(struct Customer* new_people, int count) {
+    // Сначала проверяем, нужно ли включить новую кассу
+    if (count > 0 && need_new_cashier()) {
+        turn_on_new_cashier();
+    }
+    
+    // Теперь расставляем покупателей
     for (int i = 0; i < count; i++) {
-        int cashier_index = find_cashier_with_min_queue();
+        int placed = 0; // флаг, что покупатель размещен
         
-        // Если нет места, открываем новую кассу
-        if (cashier_index == -1 || cashiers[cashier_index].queue.length >= MAX_CASHIER_QUEUE) {
-            open_new_cashier();
-            cashier_index = find_cashier_with_min_queue();
-            
-            // Если все кассы заполнены - Game Over
-            if (cashier_index == -1) {
-                printf("Game Over: невозможно разместить всех посетителей!\n");
-                print_interface(NULL, 0);
-                exit(0);
+        // Сначала пытаемся разместить в работающие кассы слева-направо
+        for (int j = 0; j < MAX_CASH; j++) {
+            if (all_cashiers[j].work && all_cashiers[j].line.size < MAX_QUEUE) {
+                add_to_queue(&all_cashiers[j].line, new_people[i]);
+                placed = 1;
+                break;
             }
         }
-        enqueue(&cashiers[cashier_index].queue, customers[i]);
+        
+        // Если не удалось разместить (все работающие кассы полные)
+        if (!placed) {
+            // Пытаемся включить новую кассу
+            for (int j = 0; j < MAX_CASH; j++) {
+                if (!all_cashiers[j].work) {
+                    all_cashiers[j].work = 1;
+                    add_to_queue(&all_cashiers[j].line, new_people[i]);
+                    placed = 1;
+                    printf("\nВключена касса %d для нового покупателя!\n", j+1);
+                    break;
+                }
+            }
+        }
+        
+        // Если все кассы работают и все полные - Game Over
+        if (!placed) {
+            return 0; // Game Over
+        }
+    }
+    return 1; // Все размещено
+}
+
+void turn_off_extra() {
+    if (people_in_lines() > 0) return;
+    
+    // Не выключаем первую кассу
+    if (working_cashiers() <= 1) return;
+    
+    int max_done = -1;
+    int idx = -1;
+    
+    // Ищем кассу с максимальным количеством обслуженных (кроме первой)
+    for (int i = 1; i < MAX_CASH; i++) {
+        if (all_cashiers[i].work && all_cashiers[i].done > max_done) {
+            max_done = all_cashiers[i].done;
+            idx = i;
+        }
+    }
+    
+    // Выключаем найденную кассу
+    if (idx != -1) {
+        all_cashiers[idx].work = 0;
+        printf("\nВыключена касса %d (обслужила %d покупателей)\n", idx+1, max_done);
     }
 }
 
-// Обработка обслуживания за одну секунду
-void process_cashiers() {
-    for (int i = 0; i < MAX_CASHIERS; i++) {
-        if (cashiers[i].is_active && cashiers[i].queue.front != NULL) {
-            // Уменьшаем время обслуживания первого в очереди
-            cashiers[i].queue.front->customer.service_time--;
-            
-            // Если время истекло - удаляем посетителя
-            if (cashiers[i].queue.front->customer.service_time == 0) {
-                Customer served = dequeue(&cashiers[i].queue);
-                cashiers[i].served_customers++;
-                cashiers[i].total_check_sum += served.check_sum;
-                total_customers_served++;
-                total_check_sum_all += served.check_sum;
-            }
-        }
-    }
+void clear_screen() {
+    #ifdef _WIN32
+        system("cls");
+    #else
+        system("clear");
+    #endif
 }
 
-// Вывод интерфейса
-void print_interface(Customer* next_customers, int next_count) {
-    system(CLEAR_SCREEN);
+void show_screen(struct Customer* next_people, int next_count) {
+    clear_screen();
     printf("Супермаркет \"Реми\". Система моделирования очередей.\n\n");
     
-    // Номера касс
     printf("  ");
-    for (int i = 0; i < MAX_CASHIERS; i++) printf("%3d ", i + 1);
+    for (int i = 0; i < MAX_CASH; i++) {
+        printf("%3d ", i+1);
+    }
     printf("\n");
     
-    // Обслужено посетителей
     printf("  ");
-    for (int i = 0; i < MAX_CASHIERS; i++) printf("%3d ", cashiers[i].served_customers);
+    for (int i = 0; i < MAX_CASH; i++) {
+        printf("%3d ", all_cashiers[i].done);
+    }
     printf("\n");
     
-    // Статус кассы
     printf("  ");
-    for (int i = 0; i < MAX_CASHIERS; i++) printf("  %c ", cashiers[i].is_active ? '+' : '-');
+    for (int i = 0; i < MAX_CASH; i++) {
+        if (all_cashiers[i].work) printf("  + ");
+        else printf("  - ");
+    }
     printf("\n");
     
-    // Очереди на кассах
-    for (int row = 0; row < MAX_CASHIER_QUEUE; row++) {
+    for (int row = 0; row < MAX_QUEUE; row++) {
         printf("  ");
-        for (int i = 0; i < MAX_CASHIERS; i++) {
-            if (cashiers[i].is_active) {
-                QueueNode* current = cashiers[i].queue.front;
-                int j = 0;
-                while (current != NULL && j < row) {
-                    current = current->next;
-                    j++;
+        for (int i = 0; i < MAX_CASH; i++) {
+            if (all_cashiers[i].work) {
+                struct Node* cur = all_cashiers[i].line.first;
+                int pos = 0;
+                while (cur != NULL && pos < row) {
+                    cur = cur->next;
+                    pos++;
                 }
                 
-                if (current != NULL && j == row) {
-                    printf(" %c%d ", current->customer.name, current->customer.service_time);
+                if (cur != NULL && pos == row) {
+                    printf(" %c%d ", cur->person.name, cur->person.time);
                 } else {
                     printf(" || ");
                 }
@@ -322,60 +314,84 @@ void print_interface(Customer* next_customers, int next_count) {
         printf("\n");
     }
     
-    // Статистика
-    printf("\nВремя: %d\n", current_time);
+    printf("\nВремя: %d\n", seconds);
     
     printf("Следующие посетители: ");
     if (next_count == 0) printf("нет");
-    else for (int i = 0; i < next_count; i++) printf("%c%d ", next_customers[i].name, next_customers[i].service_time);
+    else for (int i = 0; i < next_count; i++) {
+        printf("%c%d ", next_people[i].name, next_people[i].time);
+    }
     printf("\n");
     
-    printf("Человек в очередях: %d\n", get_total_customers_in_queues());
-    printf("Касс работает: %d из %d\n", get_active_cashiers_count(), MAX_CASHIERS);
-    printf("Всего обслужено: %d\n", total_customers_served);
-    printf("Сумма покупок: %d\n", total_check_sum_all);
-    printf("Допустимая очередь на кассу: %d\n", MAX_CASHIER_QUEUE);
-}
-
-// Основная функция симуляции
-void run_simulation() {
-    srand(time(NULL));
-    load_settings();
-    init_cashiers();
-    
-    Customer next_customers[MAX_NEXT_CUSTOMERS];
-    int next_count = 0;
-    
-    generate_next_customers(next_customers, &next_count);
-    
-    while (1) {
-        print_interface(next_customers, next_count);
-        process_cashiers();
-        distribute_customers(next_customers, next_count);
-        close_cashier_if_needed();
-        generate_next_customers(next_customers, &next_count);
-        current_time++;
-        sleep(1);
-    }
-}
-
-// Освобождение памяти
-void cleanup() {
-    if (cashiers != NULL) {
-        for (int i = 0; i < MAX_CASHIERS; i++) {
-            while (cashiers[i].queue.front != NULL) dequeue(&cashiers[i].queue);
-        }
-        free(cashiers);
-    }
+    printf("Человек в очередях: %d\n", people_in_lines());
+    printf("Касс работает: %d из %d\n", working_cashiers(), MAX_CASH);
+    printf("Всего обслужено: %d\n", all_done);
+    printf("Сумма покупок: %d\n", all_money);
+    printf("Допустимая очередь на кассу: %d\n", MAX_QUEUE);
 }
 
 int main() {
     #ifdef _WIN32
-        SetConsoleOutputCP(1251);
-        SetConsoleCP(1251);
+        SetConsoleOutputCP(CP_UTF8);
+        SetConsoleCP(CP_UTF8);
     #endif
     
-    atexit(cleanup);
-    run_simulation();
+    srand(time(NULL));
+    read_settings();
+    prepare_cashiers();
+    
+    struct Customer next[MAX_NEW];
+    int next_num = rand() % (MAX_NEW + 1);
+    for (int i = 0; i < next_num; i++) {
+        next[i] = make_customer();
+    }
+    
+    while (1) {
+        show_screen(next, next_num);
+        
+        // Пауза для просмотра
+        #ifdef _WIN32
+            Sleep(500);
+        #else
+            usleep(500000);
+        #endif
+        
+        check_customers();
+        
+        int ok = place_customers(next, next_num);
+        if (!ok) {
+            printf("\n\nGAME OVER! Все кассы заполнены!\n");
+            printf("Нажмите Enter...");
+            getchar();
+            break;
+        }
+        
+        turn_off_extra();
+        
+        next_num = rand() % (MAX_NEW + 1);
+        for (int i = 0; i < next_num; i++) {
+            next[i] = make_customer();
+        }
+        
+        seconds++;
+        
+        // Ждем оставшееся время
+        #ifdef _WIN32
+            Sleep(500);
+        #else
+            usleep(500000);
+        #endif
+    }
+    
+    // Освобождаем память
+    if (all_cashiers != NULL) {
+        for (int i = 0; i < MAX_CASH; i++) {
+            while (all_cashiers[i].line.first != NULL) {
+                take_from_queue(&all_cashiers[i].line);
+            }
+        }
+        free(all_cashiers);
+    }
+    
     return 0;
 }
